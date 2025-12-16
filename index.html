@@ -261,8 +261,15 @@ document.getElementById('out').addEventListener('click', e => {
   textarea.setSelectionRange(index, index);
 
   // caret 位置が見えるようにスクロール
-  const lineHeight = textarea.scrollHeight / textarea.value.split('\n').length;
-  textarea.scrollTop = lineHeight * textarea.value.substr(0, index).split('\n').length;
+  const totalLines = textarea.value.split('\n').length;
+  const lineHeight = textarea.scrollHeight / totalLines;
+  const caretLine = textarea.value.substr(0, index).split('\n').length;
+
+  // 表示行数（概算）
+  const visibleLines = textarea.clientHeight / lineHeight;
+
+  // 3行分下げる
+  textarea.scrollTop = lineHeight * textarea.value.substr(0, index).split('\n').length - lineHeight * 3;
 });
 
 function copyResult() {

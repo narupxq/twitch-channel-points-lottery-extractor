@@ -113,6 +113,7 @@
   <h2>Twitch チャネポユーザー抽出ツール</h2>
 
   <h3>入力</h3>
+  <p style="font-size: 0.9em; color: #555;">クリエイターダッシュボードから任意のチャンネルポイントの引き換え履歴を開き、表示されている内容をそのままコピーして貼り付けてください。</p>
 
   <textarea id="src" placeholder="（ここにTwitchの履歴をそのまま貼り付けてください）
 
@@ -138,10 +139,6 @@ cheer100sampleuser05
 
 VIP6-Month SubscriberPrimeGamingsampleuser06
 6 分前"></textarea>
-
-  <div>
-    <button onclick="run()">抽出</button>
-  </div>
 
   <h3>結果</h3>
 
@@ -326,6 +323,13 @@ function syncResultHighlight() {
   textarea.addEventListener(evt, syncResultHighlight);
 });
 
+// ===== 入力即時抽出 =====
+const srcTextarea = document.getElementById('src');
+
+// 入力が変わるたびに自動抽出
+srcTextarea.addEventListener('input', () => {
+  run();
+});
 </script>
 
 </body>

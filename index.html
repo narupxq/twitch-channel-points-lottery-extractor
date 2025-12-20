@@ -69,6 +69,44 @@
       background: #e0e0ff;
     }
 
+    .editor {
+      display: flex;
+      flex: 4;              /* ← 40% を厳密に守る */
+      min-height: 0;        /* ← flex 子の暴走防止（超重要） */
+    }
+
+    :root {
+      --editor-font-size: 14px;
+      --editor-line-height: 1.4;
+      --editor-padding: 8px;
+    }
+
+    #lineNumbers {
+      width: 36px;
+      padding: var(--editor-padding) 4px;
+      box-sizing: border-box;
+
+      font-family: monospace;
+      font-size: var(--editor-font-size);
+      line-height: var(--editor-line-height);
+
+      background: #f0f0f0;
+      color: #666;
+      text-align: right;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    #src {
+      flex: 1;
+      font-family: monospace;
+      font-size: var(--editor-font-size);
+      line-height: var(--editor-line-height);
+      padding: var(--editor-padding);
+      box-sizing: border-box;
+      overflow: auto;
+    }
+
     .user-line.active {
       background: #6a6aff;
       color: white;
@@ -115,7 +153,9 @@
   <h3>入力</h3>
   <p style="font-size: 0.9em; color: #555;">クリエイターダッシュボードから任意のチャンネルポイントの引き換え履歴を開き、表示されている内容をそのままコピーして貼り付けてください。</p>
 
-  <textarea id="src" placeholder="（ここにTwitchの履歴をそのまま貼り付けてください）
+  <div class="editor">
+    <div id="lineNumbers"></div>
+    <textarea id="src" placeholder="（ここにTwitchの履歴をそのまま貼り付けてください）
 
 例：
 
@@ -138,13 +178,14 @@ cheer100sampleuser05
 8 日前
 
 VIP6-Month SubscriberPrimeGamingsampleuser06
-6 分前"></textarea>
+6 分前"></textarea></div>
 
   <h3>結果</h3>
 
   <div>
     <button onclick="copyResult()">結果をコピー</button>
-    <span>抽出人数：</span><span id="countNum"></span><span></span>
+    <span>抽出人数：</span><span id="countNum"></span>
+    <span id="errorInfo" style="margin-left:12px; color:#c00;"></span>
     <span id="copyStatus" class="copied"></span>
   </div>
 
@@ -167,14 +208,19 @@ VIP6-Month SubscriberPrimeGamingsampleuser06
 
 <script>
 function extractUsers(text) {
-  const blocks = text.trim().split(/\n\s*\n/);
+  const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
   const result = [];
+  const errors = [];
 
-  let cursor = 0; // 元テキスト内の位置追跡用
+  let cursor = 0;
 
   for (const block of blocks) {
     const startIndex = text.indexOf(block, cursor);
     cursor = startIndex + block.length;
+
+    // 開始行番号（1始まり）
+    const lineNumber =
+      text.substring(0, startIndex).split('\n').length;
 
     const lines = block
       .split('\n')
@@ -185,23 +231,19 @@ function extractUsers(text) {
 
     if (lines.length === 3) {
       targetLine = lines[1];
-    } else if (lines.length === 2) { // たぶんこっちだけでいいはず。
+    } else if (lines.length === 2) {
       targetLine = lines[0];
     } else {
+      errors.push({ line: lineNumber });
       continue;
     }
 
-    // () があればユーザ名をそれとして最優先
     const parenMatch = targetLine.match(/\(([^)]+)\)/);
     if (parenMatch && /^[a-zA-Z0-9_]{4,25}$/.test(parenMatch[1])) {
-      result.push({
-        name: parenMatch[1],
-        index: startIndex
-      });
+      result.push({ name: parenMatch[1], index: startIndex });
       continue;
     }
 
-    // cheer・Subscriber・Prime Gaming 系を除去
     let cleaned = targetLine;
     const regex =
       /subscriber\s*\d*|サブスクライバー|音声なしで視聴中|音声のみ|認証済み|シーズン2|GamerDuo|Wylder|LEGENDUS|Raid\s*Race|Raging\s*Wolf\s*Helm|Turbo|Ugly\s*Sweater|prime\s*gaming|prime|gaming|vip|cheer\s*\d{1,3}(?:,\d{3})*|ビッツリーダー\s*\d*|subtember\s*\d{4}|twitch\s*recap\s*\d{4}|\d+(?:\.\d+)?\s*[- ]?\s*(?:year|month)s?|\d+\s*ヶ?月|20\d{2}/gi;
@@ -212,58 +254,111 @@ function extractUsers(text) {
       cleaned = next;
     }
 
-    cleaned = cleaned
-      .replace(/\s+/g, ' ')
-      .trim();
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
-    // 末尾側からユーザー名抽出
     const matches = [...cleaned.matchAll(/[a-zA-Z0-9_]{4,25}/g)];
     if (matches.length > 0) {
       result.push({
         name: matches[matches.length - 1][0],
         index: startIndex
       });
+    } else {
+      errors.push({ line: lineNumber });
     }
   }
 
-  return result;
+  return { users: result, errors };
 }
 
 function run() {
   const text = document.getElementById('src').value;
-  const users = extractUsers(text);
+  const { users, errors } = extractUsers(text);
 
   const out = document.getElementById('out');
   out.innerHTML = users
-    .map(u =>
-      `<div class="user-line" data-index="${u.index}">${u.name}</div>`
-    )
+    .map(u => `<div class="user-line" data-index="${u.index}">${u.name}</div>`)
     .join('');
 
   document.getElementById('countNum').textContent = `${users.length} 人`;
-  document.getElementById('copyStatus').textContent = '';
 
-  // 結果エリアへスクロール
-  out.scrollIntoView({ behavior: 'smooth' });
+  const errorInfo = document.getElementById('errorInfo');
+
+  if (errors.length > 0) {
+    errorInfo.innerHTML =
+      '解釈不可：' +
+      errors.map(e =>
+        `<a href="#" class="error-jump" data-line="${e.line}">
+          ${e.line}行目
+        </a>`
+      ).join(', ');
+
+    // エラー行クリック → ジャンプ
+    [...errorInfo.querySelectorAll('.error-jump')].forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        jumpToLine(Number(a.dataset.line));
+      });
+    });
+  } else {
+    errorInfo.textContent = '';
+  }
+}
+
+function jumpToLine(line) {
+  const textarea = document.getElementById('src');
+  const lines = textarea.value.split('\n');
+
+  let index = 0;
+  for (let i = 0; i < line - 1; i++) {
+    index += lines[i].length + 1;
+  }
+
+  textarea.focus();
+  textarea.setSelectionRange(index, index);
+
+  const totalLines = lines.length;
+  const lineHeight = textarea.scrollHeight / totalLines;
+
+  const targetScrollTop = Math.max(
+    0,
+    lineHeight * (line - 3)
+  );
+
+  textarea.scrollTo({
+    top: targetScrollTop,
+    behavior: 'smooth'
+  });
 }
 
 // 結果クリック時 → 入力欄の該当位置へ追従
 document.getElementById('out').addEventListener('click', e => {
-  if (!e.target.classList.contains('user-line')) return;
+  // user-line / error-line 以外は無視
+  if (
+    !e.target.classList.contains('user-line') &&
+    !e.target.classList.contains('error-line')
+  ) return;
 
   const textarea = document.getElementById('src');
   const index = Number(e.target.dataset.index);
+
+  if (Number.isNaN(index)) return;
 
   textarea.focus();
   textarea.setSelectionRange(index, index);
 
   // caret 位置が見えるようにスクロール
-  const totalLines = textarea.value.split('\n').length;
-  const lineHeight = textarea.scrollHeight / totalLines
+  const beforeText = textarea.value.slice(0, index);
+  const lineNumber = beforeText.split('\n').length;
 
-  // 3行分下げる
-  const targetScrollTop = Math.max(0, lineHeight * textarea.value.substr(0, index).split('\n').length - lineHeight * 3);
-  
+  const totalLines = textarea.value.split('\n').length;
+  const lineHeight = textarea.scrollHeight / totalLines;
+
+  // 少し上に余裕を持たせて表示（3行分）
+  const targetScrollTop = Math.max(
+    0,
+    lineHeight * (lineNumber - 3)
+  );
+
   textarea.scrollTo({
     top: targetScrollTop,
     behavior: 'smooth'
@@ -284,9 +379,22 @@ function copyResult() {
   });
 }
 
-// ===== 入力欄スクロール／カーソル移動 → 結果欄追従 =====
 const textarea = document.getElementById('src');
+const lineNumbers = document.getElementById('lineNumbers');
 const out = document.getElementById('out');
+
+function updateLineNumbers() {
+  const lines = textarea.value.split('\n').length;
+  let html = '';
+  for (let i = 1; i <= lines; i++) {
+    html += i + '<br>';
+  }
+  lineNumbers.innerHTML = html;
+}
+
+textarea.addEventListener('scroll', () => {
+  lineNumbers.scrollTop = textarea.scrollTop;
+});
 
 function syncResultHighlight() {
   const caret = textarea.selectionStart;
@@ -329,10 +437,10 @@ const srcTextarea = document.getElementById('src');
 
 // 入力が変わるたびに自動抽出
 srcTextarea.addEventListener('input', () => {
+  updateLineNumbers();
   run();
 });
 </script>
 
 </body>
 </html>
-
